@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as HousekeepingTypes from '../types/housekeeping';
-import { getFloorSummary } from '../utils/housekeepingData';
+import { getFloorSummary, ALL_ROOMS } from '../utils/housekeepingData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -29,10 +29,10 @@ const FloorOverview: React.FC<FloorOverviewProps> = ({ rooms, teams }) => {
 
   // Calculate floor statistics
   const getFloorStats = (floor: number) => {
-    const floorRooms = rooms.filter(room => room.floor === floor);
-    const assignedRooms = floorRooms.filter(room => getTeamForRoom(room.number));
-    const totalCredits = floorRooms.reduce((sum, room) => sum + room.credits, 0);
-    const assignedCredits = assignedRooms.reduce((sum, room) => sum + room.credits, 0);
+    const floorRooms = ALL_ROOMS.filter((room: HousekeepingTypes.Room) => room.floor === floor);
+    const assignedRooms = floorRooms.filter((room: HousekeepingTypes.Room) => getTeamForRoom(room.number));
+    const totalCredits = floorRooms.reduce((sum: number, room: HousekeepingTypes.Room) => sum + room.credits, 0);
+    const assignedCredits = assignedRooms.reduce((sum: number, room: HousekeepingTypes.Room) => sum + room.credits, 0);
     const teamsOnFloor = getTeamsOnFloor(floor);
     
     return {
@@ -69,13 +69,28 @@ const FloorOverview: React.FC<FloorOverviewProps> = ({ rooms, teams }) => {
                 key={floor}
                 className={cn(
                   "cursor-pointer transition-all hover:shadow-md",
-                  selectedFloor === floor && "ring-2 ring-primary"
+                  selectedFloor === floor && "ring-2 ring-primary",
+                  "border-l-4"
                 )}
+                style={{
+                  borderLeftColor: completionPercentage === 100 ? '#22c55e' : // green-500
+                                   completionPercentage > 0 ? '#eab308' : // yellow-500
+                                   '#6b7280' // gray-500
+                }}
                 onClick={() => setSelectedFloor(selectedFloor === floor ? null : floor)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex justify-between items-start">
-                    <CardTitle className="text-lg">Floor {floor}</CardTitle>
+                    <CardTitle 
+                      className={cn(
+                        "text-lg",
+                        completionPercentage === 100 ? 'text-green-600' : // Tailwind green
+                        completionPercentage > 0 ? 'text-yellow-600' : // Tailwind yellow
+                        'text-gray-600' // Tailwind gray
+                      )}
+                    >
+                      Floor {floor}
+                    </CardTitle>
                     <Badge variant="outline" className="text-xs">
                       {stats.assignedRooms}/{stats.totalRooms} rooms
                     </Badge>

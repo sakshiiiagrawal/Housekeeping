@@ -8,9 +8,9 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 interface TeamAssignmentsProps {
-  teams: HousekeepingTypes.Team[];
+  teams: HousekeepingTypes.Team[]; // These are now the active teams
   availableRooms: HousekeepingTypes.Room[];
-  onTeamsUpdate: (teams: HousekeepingTypes.Team[]) => void;
+  onTeamsUpdate: (teams: HousekeepingTypes.Team[]) => void; // This will update active teams
   onRoomsUpdate: (rooms: HousekeepingTypes.Room[]) => void;
 }
 
@@ -46,6 +46,7 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
   const autoAssignRooms = () => {
     setAutoAssignInProgress(true);
     
+    // Only consider active teams for auto-assignment
     const updatedTeams = teams.map(team => {
       // Find available rooms from team's fixed zone
       const availableFixedRooms = ALL_ROOMS.filter(room => 
@@ -179,12 +180,13 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
             <Button 
               onClick={autoAssignRooms}
               disabled={autoAssignInProgress}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto px-6 py-3 text-lg bg-green-500 text-white hover:bg-green-600 flex items-center justify-center"
+              variant="default"
             >
               {autoAssignInProgress ? 'Assigning...' : '🎯 Auto Assign'}
             </Button>
             <Button 
-              variant="outline"
+              variant="destructive"
               onClick={resetAssignments}
               className="w-full sm:w-auto"
             >
@@ -205,8 +207,10 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
                 key={team.id} 
                 className={cn(
                   "cursor-pointer transition-all hover:shadow-md",
-                  selectedTeam === team.id && "ring-2 ring-primary"
+                  selectedTeam === team.id && "ring-2 ring-primary",
+                  "border-l-4", // Add left border
                 )}
+                style={{ borderLeftColor: team.color }}
                 onClick={() => setSelectedTeam(selectedTeam === team.id ? null : team.id)}
               >
                 <CardHeader className="pb-3">
@@ -215,7 +219,14 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
                       className="w-4 h-4 rounded-full flex-shrink-0" 
                       style={{ backgroundColor: team.color }}
                     />
-                    <CardTitle className="text-lg">{team.name}</CardTitle>
+                    <CardTitle 
+                      className={cn(
+                        "text-lg",
+                        selectedTeam === team.id ? "text-primary" : "text-foreground"
+                      )}
+                    >
+                      {team.name}
+                    </CardTitle>
                   </div>
                 </CardHeader>
                 
@@ -322,7 +333,7 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
                               >
                                 <span className="font-medium">{roomNumber}</span>
                                 <span className="text-[10px] opacity-80">
-                                  {roomData?.credits || 0}c
+                                  {roomData ? `${roomData.credits}c` : 'N/A'}
                                 </span>
                               </Button>
                             );

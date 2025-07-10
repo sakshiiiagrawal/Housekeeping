@@ -10,13 +10,15 @@ import * as HousekeepingTypes from './types/housekeeping';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 
 function App() {
   const [currentDate, setCurrentDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
   const [availableRooms, setAvailableRooms] = useState<HousekeepingTypes.Room[]>(ALL_ROOMS);
-  const [teams, setTeams] = useState<HousekeepingTypes.Team[]>([...TEAMS]);
+  const [teams, setTeams] = useState<HousekeepingTypes.Team[]>([...TEAMS]); // This will hold ALL teams, regardless of active status
+  const [activeTeams, setActiveTeams] = useState<HousekeepingTypes.Team[]>(TEAMS);
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('en-US', {
@@ -24,6 +26,40 @@ function App() {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
+    });
+  };
+
+  const handleTeamToggle = (teamId: string, isChecked: boolean) => {
+    setActiveTeams(prevActiveTeams => {
+      if (isChecked) {
+        const teamToAdd = TEAMS.find(team => team.id === teamId);
+        return teamToAdd ? [...prevActiveTeams, teamToAdd].sort((a, b) => a.id.localeCompare(b.id)) : prevActiveTeams;
+      } else {
+        return prevActiveTeams.filter(team => team.id !== teamId);
+      }
+    });
+  };
+
+  // Function to update the specific active teams, called from TeamAssignments
+  const handleActiveTeamsUpdate = (updatedAssignments: HousekeepingTypes.Team[]) => {
+    setActiveTeams(prevActiveTeams => {
+      // Create a map for quick lookup of updated teams
+      const updatedMap = new Map(updatedAssignments.map(team => [team.id, team]));
+
+      // Merge the updated assignments back into the activeTeams list
+      const mergedActiveTeams = prevActiveTeams.map(team => 
+        updatedMap.has(team.id) ? updatedMap.get(team.id)! : team
+      );
+      return mergedActiveTeams;
+    });
+
+    // Also update the general teams state if needed, to keep it consistent (e.g., for RoomManager)
+    setTeams(prevTeams => {
+      const updatedMap = new Map(updatedAssignments.map(team => [team.id, team]));
+      const mergedTeams = prevTeams.map(team => 
+        updatedMap.has(team.id) ? updatedMap.get(team.id)! : team
+      );
+      return mergedTeams;
     });
   };
 
@@ -61,6 +97,42 @@ function App() {
           </Card>
         </div>
         
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              🧑‍🤝‍🧑 Select Active Teams
+            </CardTitle>
+            <CardDescription>
+              Choose which teams are working today.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {TEAMS.map(team => (
+                <div key={team.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`team-${team.id}`}
+                    checked={activeTeams.some(activeTeam => activeTeam.id === team.id)}
+                    onCheckedChange={(checked) => handleTeamToggle(team.id, checked === true)}
+                  />
+                  <label
+                    htmlFor={`team-${team.id}`}
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: team.color }}
+                      />
+                      {team.name}
+                    </div>
+                  </label>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -104,9 +176,9 @@ function App() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
           <TeamAssignments 
-            teams={teams} 
+            teams={activeTeams} 
             availableRooms={availableRooms}
-            onTeamsUpdate={setTeams}
+            onTeamsUpdate={handleActiveTeamsUpdate}
             onRoomsUpdate={setAvailableRooms}
           />
         </div>
@@ -114,7 +186,7 @@ function App() {
         <div>
           <FloorOverview 
             rooms={availableRooms} 
-            teams={teams}
+            teams={activeTeams}
           />
         </div>
       </div>
