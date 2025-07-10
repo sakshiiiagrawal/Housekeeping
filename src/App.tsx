@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -17,13 +17,6 @@ function App() {
   );
   const [availableRooms, setAvailableRooms] = useState<HousekeepingTypes.Room[]>(ALL_ROOMS);
   const [teams, setTeams] = useState<HousekeepingTypes.Team[]>([...TEAMS]);
-  const [dailyAssignment, setDailyAssignment] = useState<HousekeepingTypes.DailyAssignment>({
-    date: currentDate,
-    availableRooms: ALL_ROOMS,
-    teams: [...TEAMS],
-    assignments: [],
-    constraints: CONSTRAINTS,
-  });
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('en-US', {

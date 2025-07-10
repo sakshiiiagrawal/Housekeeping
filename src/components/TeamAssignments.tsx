@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import * as HousekeepingTypes from '../types/housekeeping';
 import { CONSTRAINTS, WILDCARD_ROOMS, ALL_ROOMS } from '../utils/housekeepingData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

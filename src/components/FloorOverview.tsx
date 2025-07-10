@@ -60,7 +60,7 @@ const FloorOverview: React.FC<FloorOverviewProps> = ({ rooms, teams }) => {
 
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 gap-4">
-          {floorSummary.map(({ floor, totalRooms, totalCredits }) => {
+          {floorSummary.map(({ floor }) => {
             const stats = getFloorStats(floor);
             const completionPercentage = stats.totalRooms > 0 ? (stats.assignedRooms / stats.totalRooms) * 100 : 0;
             
