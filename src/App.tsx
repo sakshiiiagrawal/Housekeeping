@@ -9,25 +9,12 @@ import { TEAMS, ALL_ROOMS, CONSTRAINTS } from './utils/housekeepingData';
 import * as HousekeepingTypes from './types/housekeeping';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 
 function App() {
-  const [currentDate, setCurrentDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
   const [availableRooms, setAvailableRooms] = useState<HousekeepingTypes.Room[]>(ALL_ROOMS);
-  const [teams, setTeams] = useState<HousekeepingTypes.Team[]>([...TEAMS]); // This will hold ALL teams, regardless of active status
   const [activeTeams, setActiveTeams] = useState<HousekeepingTypes.Team[]>(TEAMS);
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
 
   const handleTeamToggle = (teamId: string, isChecked: boolean) => {
     setActiveTeams(prevActiveTeams => {
@@ -52,50 +39,11 @@ function App() {
       );
       return mergedActiveTeams;
     });
-
-    // Also update the general teams state if needed, to keep it consistent (e.g., for RoomManager)
-    setTeams(prevTeams => {
-      const updatedMap = new Map(updatedAssignments.map(team => [team.id, team]));
-      const mergedTeams = prevTeams.map(team => 
-        updatedMap.has(team.id) ? updatedMap.get(team.id)! : team
-      );
-      return mergedTeams;
-    });
   };
 
   const HomeView = () => (
     <div className="container mx-auto p-6 space-y-6">
       <div className="space-y-6">
-        <div className="space-y-4">
-          <h1 className="text-4xl font-bold text-primary">🧹 Daily Housekeeping Manager</h1>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                📅 Assignment Date
-              </CardTitle>
-              <CardDescription>
-                Select the date for room assignments
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                <label htmlFor="date" className="text-sm font-medium">
-                  Date:
-                </label>
-                <Input
-                  type="date"
-                  id="date"
-                  value={currentDate}
-                  onChange={(e) => setCurrentDate(e.target.value)}
-                  className="w-auto"
-                />
-                <p className="text-sm text-muted-foreground italic">
-                  {formatDate(currentDate)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
         
         <Card>
           <CardHeader>
