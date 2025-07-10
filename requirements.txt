@@ -1,0 +1,174 @@
+🧹 Daily Housekeeping Room Assignment
+
+🗓️ Objective
+As the Housekeeping Manager, I need to assign available rooms for cleaning to the scheduled housekeeping teams every morning when I "open a day." The goal is to allocate rooms fairly and efficiently while respecting operational constraints.
+
+✅ Inputs (Provided Daily)
+Available Rooms List
+
+
+A list of rooms that need to be cleaned that day. Each room includes:
+Room number
+Floor number
+Credit value (workload)
+Departure/stay status (optional but preferred)
+
+
+Room-to-Floor Mapping
+
+
+Each room is assigned to one of the 8 hotel floors.
+
+
+Team Availability
+
+
+A list of up to 11 teams scheduled for the day.
+
+
+Fixed Room Assignments by Team
+
+
+Each team has a predefined set of rooms they are trained or allowed to clean (“fixed zones”).
+
+
+Room Credit Values
+
+
+Every room has a numerical credit value based on cleaning effort.
+
+
+Rooms with credit > 1 are considered suites.
+
+
+Special Room Notes
+
+
+Room 705 → can be assigned to any team
+
+
+Room 702 + 708 → considered a combined single unit worth 4 credits
+
+
+Room 310 + 312 → considered a combined single unit worth 2.5 credits
+
+
+
+📌 Assignment Rules & Constraints
+🔢 Team Credit Range
+Every team must be assigned between 15.5 and 17 credits.
+
+
+Credit totals must include all assigned rooms (fixed + non-fixed if needed).
+
+
+🧑‍🤝‍🧑 Team-Floor Limitations
+A team can be assigned rooms on a maximum of 2 floors.
+
+
+No more than 3 teams can be assigned to a single floor.
+
+
+🧱 Room Assignment Rules
+Prefer assigning each team rooms from their fixed zone.
+
+
+If fixed rooms don’t provide at least 15.5 credits, allow assignment of non-fixed rooms to make up the minimum.
+
+
+Each room can be assigned to only one team.
+
+
+Room 705 is a wildcard and can be used to balance team credit.
+
+
+⚖️ Zoning & Balance Guidelines
+Try to keep teams within their usual zones.
+
+
+Try to balance departures and suites so one team doesn’t get only heavy or only light rooms.
+
+
+Where possible, favor assignments that keep teams on adjacent or nearby floors.
+
+
+
+📤 Expected Output
+A daily room assignment report, showing:
+Each team’s name
+
+
+The list of assigned rooms
+
+
+Total credits per team
+
+
+Floors covered by each team
+
+
+This output will help:
+Ensure cleaning workload is fairly distributed
+
+
+Assist in performance tracking
+
+
+Help supervisors oversee task distribution across floors
+
+
+
+
+🏨 FINAL ROOM LIST WITH CREDITS
+(Note: Credits shown are per room, unless combined.)
+Floor 1 – Total Rooms: 16 | Total Credits: 22
+101 (1.5), 104 (2), 105 (1), 107 (1), 108 (2), 109 (1), 110 (2), 112 (1), 115 (2), 119 (1.5), 123 (1), 125 (1), 127 (1), 129 (1), 131 (1), 133 (1)
+
+Floor 2 – Rooms: 23 | Credits: 30
+201 (1.5), 204 (2), 205 (1), 207 (1), 208 (2), 209 (1), 210 (2), 212 (1), 215 (2), 216 (1), 218 (1), 219 (1.5), 220 (1), 222 (1), 223 (1), 224 (1), 225 (1), 226 (1), 227 (1), 228 (1), 229 (1), 231 (1), 233 (1)
+
+Floor 3 – Rooms: 24 | Credits: 30.5
+301 (1.5), 304 (2), 305 (1), 307 (1), 308 (2), 309 (1), 310+312 (2.5), 314 (1), 315 (2), 316 (1), 318 (1), 319 (1.5), 320 (1), 322 (1), 323 (1), 324 (1), 325 (1), 326 (1), 327 (1), 328 (1), 329 (1), 331 (1), 333 (1)
+
+Floor 4 – Rooms: 23 | Credits: 29
+401 (1.5), 404 (2), 405 (1), 407 (1), 408 (2), 409 (1), 410 (2), 412 (1), 415 (2), 416 (1), 418 (1), 419 (1.5), 420 (1), 422 (1), 423 (1), 424 (1), 425 (1), 426 (1), 427 (1), 428 (1), 429 (1), 431 (1), 433 (1)
+
+Floor 5 – Rooms: 23 | Credits: 29
+501 (1.5), 504 (2), 505 (1), 507 (1), 508 (2), 509 (1), 510 (2), 512 (1), 515 (2), 516 (1), 518 (1), 519 (1.5), 520 (1), 522 (1), 523 (1), 524 (1), 525 (1), 526 (1), 527 (1), 528 (1), 529 (1), 531 (1), 533 (1)
+
+Floor 6 – Rooms: 25 | Credits: 30
+601 (1.5), 602 (1), 604 (1), 605 (1), 607 (1), 608 (2), 609 (1), 610 (2), 612 (1), 614 (1), 615 (2), 616 (1), 618 (1), 619 (1.5), 620 (1), 622 (1), 623 (1), 624 (1), 625 (1), 626 (1), 627 (1), 628 (1), 629 (1), 631 (1), 633 (1)
+
+Floor 7 – Rooms: 14 | Credits: 22.5
+702+708 (4), 705 (4), 710 (1), 711 (1), 714 (1), 718 (1.5), 721 (1.5), 722 (1.5), 724 (1), 725 (1), 728 (2), 729 (1), 731 (1)
+
+Floor 8 – Rooms: 13 | Credits: 18
+802 (1), 803 (1), 808 (2), 809 (1), 810 (1), 814 (1), 818 (1), 822 (1), 823 (1), 826 (1), 827 (1), 833 (2), 900 (4)
+
+🧾 FIXED ROOM ASSIGNMENTS BY TEAM
+🟩 Mosaique:
+101, 105, 107, 109, 110, 112, 115, 119, 123, 125, 127, 129, 131
+🟨 Mandarine:
+201, 202, 203, 204, 205, 206, 207, 209, 210, 211, 212, 227, 229, 230, 231, 232, 233
+🟧 Lempicka:
+208, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 228
+🟦 Soie:
+301, 302, 303, 304, 305, 306, 307, 309, 310+312, 311, 313, 314, 327, 329, 330, 331, 332, 333
+🟪 Paris:
+308, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 328
+🟥 Prince:
+401, 402, 403, 404, 405, 406, 407, 409, 410, 411, 412, 427, 429, 430, 431, 432, 433
+🟫 Miroir:
+408, 415, 416, 417, 418, 419, 420, 421, 422, 423, 424, 425, 426, 428
+🟨 Art Deco:
+501, 502, 503, 504, 505, 506, 507, 509, 510, 511, 512, 527, 529, 530, 531, 532, 533
+⬛ Cuir:
+508, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 528
+🟩 Ceyladon:
+601, 605, 606, 607, 608, 609, 610, 611, 612, 613, 614, 615, 616, 617, 618, 619, 623
+🟧 Or:
+602, 604, 620, 622, 624, 625, 626, 627, 628, 629, 630, 631, 632, 633
+🟪 Macassar:
+702+708, 710, 711, 714, 718, 721, 722, 724, 725, 728, 729, 731
+🟫 Duplex:
+802, 803, 808, 809, 810, 814, 818, 822, 823, 826, 827, 833, 900
