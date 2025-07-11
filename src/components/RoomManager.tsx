@@ -52,7 +52,7 @@ const RoomManager: React.FC<RoomManagerProps> = ({ rooms, onRoomsUpdate }) => {
 
   // Filter and sort rooms
   const filteredAndSortedRooms = useMemo(() => {
-    let filteredRooms = ALL_ROOMS;
+    let filteredRooms = [...ALL_ROOMS]; // Start with all rooms
 
     // Apply search filter
     if (searchTerm) {
@@ -78,6 +78,7 @@ const RoomManager: React.FC<RoomManagerProps> = ({ rooms, onRoomsUpdate }) => {
         !rooms.some(availableRoom => availableRoom.number === room.number)
       );
     }
+    // No additional filtering for 'all' status; it should display all rooms handled by initial `filteredRooms` assignment.
 
     // Apply sorting
     switch (sortBy) {

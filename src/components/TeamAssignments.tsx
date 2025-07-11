@@ -42,71 +42,131 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
     };
   };
 
+  // Helper to calculate credits for a given list of room numbers
+  const calculateCreditsForRoomNumbers = (roomNumbers: string[]) => {
+    return ALL_ROOMS.filter(room => roomNumbers.includes(room.number))
+      .reduce((sum, room) => sum + room.credits, 0);
+  };
+
   // Auto-assign rooms to teams based on their fixed zones
   const autoAssignRooms = () => {
     setAutoAssignInProgress(true);
     
-    // Only consider active teams for auto-assignment
-    const updatedTeams = teams.map(team => {
-      // Find available rooms from team's fixed zone
-      const availableFixedRooms = ALL_ROOMS.filter(room => 
-        team.fixedRooms.includes(room.number) && availableRooms.some(ar => ar.number === room.number)
-      );
+    let currentAvailableRooms = [...availableRooms]; // Start with rooms currently available
+    let tempUpdatedTeams: HousekeepingTypes.Team[] = teams.map(team => ({ ...team, assignedRooms: [] as string[] }));
+
+    // Phase 1: Initial assignment to active teams based on fixed zones, aiming for minCredits
+    tempUpdatedTeams = tempUpdatedTeams.map(team => {
+      const initialAssignedRooms: string[] = [];
+      let currentCredits = 0;
+
+      // Prioritize fixed zone rooms
+      const fixedZoneRooms = currentAvailableRooms.filter(room => team.fixedRooms.includes(room.number))
+        .sort((a, b) => b.credits - a.credits); // Larger rooms first
       
-      // Sort by credits (larger rooms first for better distribution)
-      availableFixedRooms.sort((a, b) => b.credits - a.credits);
-      
-      let assignedRooms: string[] = [];
-      let totalCredits = 0;
-      
-      // Assign rooms until we reach minimum credits
-      for (const room of availableFixedRooms) {
-        if (totalCredits + room.credits <= CONSTRAINTS.maxCredits) {
-          assignedRooms.push(room.number);
-          totalCredits += room.credits;
+      for (const room of fixedZoneRooms) {
+        if (currentCredits + room.credits <= CONSTRAINTS.maxCredits) {
+          initialAssignedRooms.push(room.number);
+          currentCredits += room.credits;
         }
-        
-        if (totalCredits >= CONSTRAINTS.minCredits) {
-          break;
-        }
+        if (currentCredits >= CONSTRAINTS.minCredits) break; // Reached min credits
       }
-      
-      // If still under minimum, try to add wildcard rooms
-      if (totalCredits < CONSTRAINTS.minCredits) {
-        const wildcardRooms = ALL_ROOMS.filter(room => 
-          WILDCARD_ROOMS.includes(room.number) && 
-          !assignedRooms.includes(room.number) &&
-          availableRooms.some(ar => ar.number === room.number)
-        );
-        
-        for (const room of wildcardRooms) {
-          if (totalCredits + room.credits <= CONSTRAINTS.maxCredits) {
-            assignedRooms.push(room.number);
-            totalCredits += room.credits;
-            break;
+
+      // If still under minimum, try to add wildcard rooms (if available)
+      if (currentCredits < CONSTRAINTS.minCredits) {
+        const availableWildcardRooms = currentAvailableRooms.filter(room => 
+          WILDCARD_ROOMS.includes(room.number) && !initialAssignedRooms.includes(room.number)
+        ).sort((a, b) => b.credits - a.credits); // Larger rooms first
+
+        for (const room of availableWildcardRooms) {
+          if (currentCredits + room.credits <= CONSTRAINTS.maxCredits) {
+            initialAssignedRooms.push(room.number);
+            currentCredits += room.credits;
+            break; // Add one wildcard room and move on
           }
         }
       }
-      
+
+      // Remove assigned rooms from global available pool
+      currentAvailableRooms = currentAvailableRooms.filter(room => !initialAssignedRooms.includes(room.number));
+
       return {
         ...team,
-        assignedRooms,
-        totalCredits,
-        floors: [...new Set(ALL_ROOMS
-          .filter(room => assignedRooms.includes(room.number))
-          .map(room => room.floor))].sort(),
+        assignedRooms: initialAssignedRooms,
       };
     });
-    
-    onTeamsUpdate(updatedTeams);
-    
-    // Remove assigned rooms from available rooms
-    const allAssignedRooms = updatedTeams.flatMap(team => team.assignedRooms);
-    const remainingRooms = ALL_ROOMS.filter(room => 
-      !allAssignedRooms.includes(room.number)
+
+    // Phase 2: Distribute remaining unassigned rooms to fill teams to minCredits
+    let unassignedRooms = currentAvailableRooms.filter(room => 
+      !tempUpdatedTeams.some(team => team.assignedRooms.includes(room.number))
     );
-    onRoomsUpdate(remainingRooms);
+
+    // Sort unassigned rooms randomly for fair distribution
+    unassignedRooms.sort(() => Math.random() - 0.5);
+
+    // First, fill up teams that are below minCredits
+    tempUpdatedTeams.forEach(team => {
+      let teamCredits = calculateCreditsForRoomNumbers(team.assignedRooms);
+      if (teamCredits < CONSTRAINTS.minCredits) {
+        const roomsToAssign: HousekeepingTypes.Room[] = [];
+        const remainingCapacity = CONSTRAINTS.maxCredits - teamCredits;
+
+        for (let i = 0; i < unassignedRooms.length; i++) {
+          const room = unassignedRooms[i];
+          if (teamCredits + room.credits <= CONSTRAINTS.minCredits && room.credits <= remainingCapacity) {
+            roomsToAssign.push(room);
+            teamCredits += room.credits;
+          }
+        }
+
+        // Remove assigned rooms from unassignedRooms pool
+        team.assignedRooms.push(...roomsToAssign.map(r => r.number));
+        unassignedRooms = unassignedRooms.filter(room => !roomsToAssign.includes(room));
+      }
+    });
+
+    // Phase 3: If all teams meet minCredits, distribute remaining unassigned rooms up to maxCredits
+    // Only if all teams have bandwidth left, then only assign more than 15.5 credits
+    const allTeamsMeetMin = tempUpdatedTeams.every(team => calculateCreditsForRoomNumbers(team.assignedRooms) >= CONSTRAINTS.minCredits);
     
+    if (allTeamsMeetMin) {
+      tempUpdatedTeams.forEach(team => {
+        let teamCredits = calculateCreditsForRoomNumbers(team.assignedRooms);
+        const roomsToAssign: HousekeepingTypes.Room[] = [];
+        const remainingCapacity = CONSTRAINTS.maxCredits - teamCredits;
+
+        for (let i = 0; i < unassignedRooms.length; i++) {
+          const room = unassignedRooms[i];
+          if (teamCredits + room.credits <= CONSTRAINTS.maxCredits && room.credits <= remainingCapacity) {
+            roomsToAssign.push(room);
+            teamCredits += room.credits;
+          }
+        }
+
+        // Remove assigned rooms from unassignedRooms pool
+        team.assignedRooms.push(...roomsToAssign.map(r => r.number));
+        unassignedRooms = unassignedRooms.filter(room => !roomsToAssign.includes(room));
+      });
+    }
+
+    // Finalize teams with updated credits and floors
+    const finalUpdatedTeams = tempUpdatedTeams.map(team => {
+      const finalAssignedRooms = team.assignedRooms;
+      const finalTotalCredits = calculateCreditsForRoomNumbers(finalAssignedRooms);
+      const finalFloors = [...new Set(ALL_ROOMS
+        .filter(room => finalAssignedRooms.includes(room.number))
+        .map(room => room.floor))].sort();
+
+      return {
+        ...team,
+        assignedRooms: finalAssignedRooms,
+        totalCredits: finalTotalCredits,
+        floors: finalFloors,
+      };
+    });
+
+    onTeamsUpdate(finalUpdatedTeams);
+    onRoomsUpdate(unassignedRooms);
     setAutoAssignInProgress(false);
   };
 
@@ -319,7 +379,7 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
                                 key={roomNumber}
                                 variant={isAssigned ? "default" : "outline"}
                                 size="sm"
-                                disabled={!isAvailable}
+                                disabled={!isAvailable || isAssigned} // Disable if not globally available OR if already assigned to this team
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (isAvailable) {
