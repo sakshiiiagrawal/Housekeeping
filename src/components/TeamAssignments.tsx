@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as HousekeepingTypes from '../types/housekeeping';
-import { CONSTRAINTS, WILDCARD_ROOMS, ALL_ROOMS } from '../utils/housekeepingData';
+import { CONSTRAINTS, ALL_ROOMS } from '../utils/housekeepingData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -76,7 +76,6 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
         .sort((a, b) => b.credits - a.credits);
       
       for (const room of fixedZoneRooms) {
-        const potentialAssignedRooms = [...initialAssignedRooms, room.number];
         const potentialCredits = currentCredits + room.credits;
         const potentialFloors = [...new Set([...currentFloors, room.floor])];
         
@@ -101,11 +100,9 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
       let teamCredits = calculateCreditsForRoomNumbers(team.assignedRooms);
       if (teamCredits < CONSTRAINTS.minCredits) {
         const roomsToAssign: HousekeepingTypes.Room[] = [];
-        const remainingCapacity = CONSTRAINTS.maxCredits - teamCredits;
         let potentialFloors = team.floors;
         
         for (const room of unassignedRooms) {
-          const potentialAssignedRooms = [...team.assignedRooms, room.number];
           const potentialCredits = teamCredits + room.credits;
           const potentialFloorsUpdated = [...new Set([...potentialFloors, room.floor])];
           
@@ -130,10 +127,8 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
         let teamCredits = team.totalCredits;
         let potentialFloors = team.floors;
         const roomsToAssign: HousekeepingTypes.Room[] = [];
-        const remainingCapacity = CONSTRAINTS.maxCredits - teamCredits;
         
         for (const room of unassignedRooms) {
-          const potentialAssignedRooms = [...team.assignedRooms, room.number];
           const potentialCredits = teamCredits + room.credits;
           const potentialFloorsUpdated = [...new Set([...potentialFloors, room.floor])];
           
