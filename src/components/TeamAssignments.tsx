@@ -55,117 +55,103 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
     let currentAvailableRooms = [...availableRooms]; // Start with rooms currently available
     let tempUpdatedTeams: HousekeepingTypes.Team[] = teams.map(team => ({ ...team, assignedRooms: [] as string[] }));
 
+    // Helper function to check if an assignment violates maxTeamsPerFloor
+    const checkMaxTeamsPerFloor = (potentialTeams: HousekeepingTypes.Team[], floor: number): boolean => {
+      const floorsWithTeams: Record<number, number> = {};
+      potentialTeams.forEach(team => {
+        team.floors.forEach(teamFloor => {
+          floorsWithTeams[teamFloor] = (floorsWithTeams[teamFloor] || 0) + 1;
+        });
+      });
+      return (floorsWithTeams[floor] || 0) <= CONSTRAINTS.maxTeamsPerFloor;
+    };
+
     // Phase 1: Initial assignment to active teams based on fixed zones, aiming for minCredits
     tempUpdatedTeams = tempUpdatedTeams.map(team => {
       const initialAssignedRooms: string[] = [];
       let currentCredits = 0;
+      let currentFloors: number[] = [];
 
-      // Prioritize fixed zone rooms
       const fixedZoneRooms = currentAvailableRooms.filter(room => team.fixedRooms.includes(room.number))
-        .sort((a, b) => b.credits - a.credits); // Larger rooms first
+        .sort((a, b) => b.credits - a.credits);
       
       for (const room of fixedZoneRooms) {
-        if (currentCredits + room.credits <= CONSTRAINTS.maxCredits) {
+        const potentialAssignedRooms = [...initialAssignedRooms, room.number];
+        const potentialCredits = currentCredits + room.credits;
+        const potentialFloors = [...new Set([...currentFloors, room.floor])];
+        
+        if (potentialCredits <= CONSTRAINTS.maxCredits && potentialFloors.length <= CONSTRAINTS.maxFloorsPerTeam && checkMaxTeamsPerFloor(tempUpdatedTeams, room.floor)) {
           initialAssignedRooms.push(room.number);
-          currentCredits += room.credits;
+          currentCredits = potentialCredits;
+          currentFloors = potentialFloors;
+          currentAvailableRooms = currentAvailableRooms.filter(r => r.number !== room.number);
         }
-        if (currentCredits >= CONSTRAINTS.minCredits) break; // Reached min credits
+        
+        if (currentCredits >= CONSTRAINTS.minCredits) break;
       }
 
-      // If still under minimum, try to add wildcard rooms (if available)
-      if (currentCredits < CONSTRAINTS.minCredits) {
-        const availableWildcardRooms = currentAvailableRooms.filter(room => 
-          WILDCARD_ROOMS.includes(room.number) && !initialAssignedRooms.includes(room.number)
-        ).sort((a, b) => b.credits - a.credits); // Larger rooms first
-
-        for (const room of availableWildcardRooms) {
-          if (currentCredits + room.credits <= CONSTRAINTS.maxCredits) {
-            initialAssignedRooms.push(room.number);
-            currentCredits += room.credits;
-            break; // Add one wildcard room and move on
-          }
-        }
-      }
-
-      // Remove assigned rooms from global available pool
-      currentAvailableRooms = currentAvailableRooms.filter(room => !initialAssignedRooms.includes(room.number));
-
-      return {
-        ...team,
-        assignedRooms: initialAssignedRooms,
-      };
+      return { ...team, assignedRooms: initialAssignedRooms, floors: currentFloors, totalCredits: currentCredits };
     });
 
     // Phase 2: Distribute remaining unassigned rooms to fill teams to minCredits
-    let unassignedRooms = currentAvailableRooms.filter(room => 
-      !tempUpdatedTeams.some(team => team.assignedRooms.includes(room.number))
-    );
-
-    // Sort unassigned rooms randomly for fair distribution
+    let unassignedRooms = currentAvailableRooms.filter(room => !tempUpdatedTeams.some(team => team.assignedRooms.includes(room.number)));
     unassignedRooms.sort(() => Math.random() - 0.5);
 
-    // First, fill up teams that are below minCredits
     tempUpdatedTeams.forEach(team => {
       let teamCredits = calculateCreditsForRoomNumbers(team.assignedRooms);
       if (teamCredits < CONSTRAINTS.minCredits) {
         const roomsToAssign: HousekeepingTypes.Room[] = [];
         const remainingCapacity = CONSTRAINTS.maxCredits - teamCredits;
-
-        for (let i = 0; i < unassignedRooms.length; i++) {
-          const room = unassignedRooms[i];
-          if (teamCredits + room.credits <= CONSTRAINTS.minCredits && room.credits <= remainingCapacity) {
+        let potentialFloors = team.floors;
+        
+        for (const room of unassignedRooms) {
+          const potentialAssignedRooms = [...team.assignedRooms, room.number];
+          const potentialCredits = teamCredits + room.credits;
+          const potentialFloorsUpdated = [...new Set([...potentialFloors, room.floor])];
+          
+          if (potentialCredits <= CONSTRAINTS.minCredits && potentialCredits <= CONSTRAINTS.maxCredits && potentialFloorsUpdated.length <= CONSTRAINTS.maxFloorsPerTeam && checkMaxTeamsPerFloor(tempUpdatedTeams, room.floor)) {
             roomsToAssign.push(room);
-            teamCredits += room.credits;
+            teamCredits = potentialCredits;
+            potentialFloors = potentialFloorsUpdated;
+            unassignedRooms = unassignedRooms.filter(r => r.number !== room.number);
           }
         }
-
-        // Remove assigned rooms from unassignedRooms pool
+        
         team.assignedRooms.push(...roomsToAssign.map(r => r.number));
-        unassignedRooms = unassignedRooms.filter(room => !roomsToAssign.includes(room));
+        team.totalCredits = teamCredits;
+        team.floors = potentialFloors;
       }
     });
 
-    // Phase 3: If all teams meet minCredits, distribute remaining unassigned rooms up to maxCredits
-    // Only if all teams have bandwidth left, then only assign more than 15.5 credits
-    const allTeamsMeetMin = tempUpdatedTeams.every(team => calculateCreditsForRoomNumbers(team.assignedRooms) >= CONSTRAINTS.minCredits);
-    
+    // Phase 3: Distribute remaining rooms up to maxCredits if all teams meet minCredits
+    const allTeamsMeetMin = tempUpdatedTeams.every(team => team.totalCredits >= CONSTRAINTS.minCredits);
     if (allTeamsMeetMin) {
       tempUpdatedTeams.forEach(team => {
-        let teamCredits = calculateCreditsForRoomNumbers(team.assignedRooms);
+        let teamCredits = team.totalCredits;
+        let potentialFloors = team.floors;
         const roomsToAssign: HousekeepingTypes.Room[] = [];
         const remainingCapacity = CONSTRAINTS.maxCredits - teamCredits;
-
-        for (let i = 0; i < unassignedRooms.length; i++) {
-          const room = unassignedRooms[i];
-          if (teamCredits + room.credits <= CONSTRAINTS.maxCredits && room.credits <= remainingCapacity) {
+        
+        for (const room of unassignedRooms) {
+          const potentialAssignedRooms = [...team.assignedRooms, room.number];
+          const potentialCredits = teamCredits + room.credits;
+          const potentialFloorsUpdated = [...new Set([...potentialFloors, room.floor])];
+          
+          if (potentialCredits <= CONSTRAINTS.maxCredits && potentialFloorsUpdated.length <= CONSTRAINTS.maxFloorsPerTeam && checkMaxTeamsPerFloor(tempUpdatedTeams, room.floor)) {
             roomsToAssign.push(room);
-            teamCredits += room.credits;
+            teamCredits = potentialCredits;
+            potentialFloors = potentialFloorsUpdated;
+            unassignedRooms = unassignedRooms.filter(r => r.number !== room.number);
           }
         }
-
-        // Remove assigned rooms from unassignedRooms pool
+        
         team.assignedRooms.push(...roomsToAssign.map(r => r.number));
-        unassignedRooms = unassignedRooms.filter(room => !roomsToAssign.includes(room));
+        team.totalCredits = teamCredits;
+        team.floors = potentialFloors;
       });
     }
 
-    // Finalize teams with updated credits and floors
-    const finalUpdatedTeams = tempUpdatedTeams.map(team => {
-      const finalAssignedRooms = team.assignedRooms;
-      const finalTotalCredits = calculateCreditsForRoomNumbers(finalAssignedRooms);
-      const finalFloors = [...new Set(ALL_ROOMS
-        .filter(room => finalAssignedRooms.includes(room.number))
-        .map(room => room.floor))].sort();
-
-      return {
-        ...team,
-        assignedRooms: finalAssignedRooms,
-        totalCredits: finalTotalCredits,
-        floors: finalFloors,
-      };
-    });
-
-    onTeamsUpdate(finalUpdatedTeams);
+    onTeamsUpdate(tempUpdatedTeams);
     onRoomsUpdate(unassignedRooms);
     setAutoAssignInProgress(false);
   };
