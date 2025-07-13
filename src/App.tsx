@@ -4,7 +4,6 @@ import Footer from './components/Footer';
 import TeamAssignments from './components/TeamAssignments';
 import FloorOverview from './components/FloorOverview';
 import RoomManager from './components/RoomManager';
-import { CONSTRAINTS } from './utils/housekeepingData';
 import { HousekeepingProvider, useHousekeeping } from './context/HousekeepingContext'; // Import context
 import TeamManagement from './components/TeamManagement'; // Import the new component
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import * as HousekeepingTypes from '../types/housekeeping';
 import { ALL_ROOMS } from '../utils/housekeepingData';
 import { useHousekeeping } from '../context/HousekeepingContext'; // Import context
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
