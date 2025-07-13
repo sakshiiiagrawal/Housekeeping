@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import * as HousekeepingTypes from '../types/housekeeping';
 import { CONSTRAINTS, ALL_ROOMS } from '../utils/housekeepingData';
+import { useHousekeeping } from '../context/HousekeepingContext'; // Import context
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,202 +9,211 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 interface TeamAssignmentsProps {
-  teams: HousekeepingTypes.Team[]; // These are now the active teams
-  availableRooms: HousekeepingTypes.Room[];
-  onTeamsUpdate: (teams: HousekeepingTypes.Team[]) => void; // This will update active teams
-  onRoomsUpdate: (rooms: HousekeepingTypes.Room[]) => void;
+  // Props are now consumed from context, no longer needed here
 }
 
-const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
-  teams,
-  availableRooms,
-  onTeamsUpdate,
-  onRoomsUpdate,
-}) => {
+const TeamAssignments: React.FC<TeamAssignmentsProps> = () => {
+  const { availableRooms, setAvailableRooms, activeTeams, setActiveTeams } = useHousekeeping();
+
+  console.log("TeamAssignments", { teams: activeTeams, availableRooms });
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [autoAssignInProgress, setAutoAssignInProgress] = useState(false);
 
-  // Calculate team's current assignments and credits
-  const calculateTeamStats = (team: HousekeepingTypes.Team) => {
-    const assignedRoomNumbers = team.assignedRooms;
-    const assignedRoomData = ALL_ROOMS.filter(room => 
-      assignedRoomNumbers.includes(room.number)
-    );
-    
-    const totalCredits = assignedRoomData.reduce((sum, room) => sum + room.credits, 0);
-    const floors = [...new Set(assignedRoomData.map(room => room.floor))].sort();
-    
-    return {
-      totalCredits,
-      floors,
-      roomCount: assignedRoomNumbers.length,
-      isWithinRange: totalCredits >= CONSTRAINTS.minCredits && totalCredits <= CONSTRAINTS.maxCredits,
-      hasValidFloors: floors.length <= CONSTRAINTS.maxFloorsPerTeam,
-    };
+  // Helper to get rooms by number
+  const getRoomByNumber = (roomNumber: string): HousekeepingTypes.Room | undefined => {
+    return ALL_ROOMS.find(room => room.number === roomNumber);
   };
 
-  // Helper to calculate credits for a given list of room numbers
-  const calculateCreditsForRoomNumbers = (roomNumbers: string[]) => {
-    return ALL_ROOMS.filter(room => roomNumbers.includes(room.number))
-      .reduce((sum, room) => sum + room.credits, 0);
+  // Helper to calculate team stats from a given list of assigned room numbers
+  const calculateStatsForAssignedRooms = (assignedRoomsNumbers: string[]) => {
+    const assignedRoomData = assignedRoomsNumbers.map(num => getRoomByNumber(num)).filter(Boolean) as HousekeepingTypes.Room[];
+    const totalCredits = assignedRoomData.reduce((sum, room) => sum + room.credits, 0);
+    const floors = [...new Set(assignedRoomData.map(room => room.floor))].sort((a, b) => a - b);
+    return { totalCredits, floors, roomCount: assignedRoomsNumbers.length };
+  };
+
+  // Calculate team's current assignments and credits (for display)
+  const calculateTeamStats = (team: HousekeepingTypes.Team) => {
+    return calculateStatsForAssignedRooms(team.assignedRooms);
+  };
+
+  // Helper function to check if an assignment violates maxTeamsPerFloor considering all teams' potential assignments
+  const checkMaxTeamsPerFloorGlobal = (
+    roomFloorBeingConsidered: number,
+    potentialAssignedRoomsMap: Map<string, string[]> // Map representing proposed assignments across all teams
+  ): boolean => {
+    const floorsWithTeamsCount: Record<number, number> = {};
+
+    for (const assignedRoomsNumbers of potentialAssignedRoomsMap.values()) {
+      const assignedRoomData = assignedRoomsNumbers.map(num => getRoomByNumber(num)).filter(Boolean) as HousekeepingTypes.Room[];
+      const floorsForThisTeam = [...new Set(assignedRoomData.map(room => room.floor))];
+
+      floorsForThisTeam.forEach(floor => {
+        floorsWithTeamsCount[floor] = (floorsWithTeamsCount[floor] || 0) + 1;
+      });
+    }
+    // Check if the floor in question will exceed the limit *after* this potential assignment
+    return (floorsWithTeamsCount[roomFloorBeingConsidered] || 0) <= CONSTRAINTS.maxTeamsPerFloor;
   };
 
   // Auto-assign rooms to teams based on their fixed zones
   const autoAssignRooms = () => {
     setAutoAssignInProgress(true);
-    
-    let currentAvailableRooms = [...availableRooms]; // Start with rooms currently available
-    let tempUpdatedTeams: HousekeepingTypes.Team[] = teams.map(team => ({ ...team, assignedRooms: [] as string[] }));
 
-    // Helper function to check if an assignment violates maxTeamsPerFloor
-    const checkMaxTeamsPerFloor = (potentialTeams: HousekeepingTypes.Team[], floor: number): boolean => {
-      const floorsWithTeams: Record<number, number> = {};
-      potentialTeams.forEach(team => {
-        team.floors.forEach(teamFloor => {
-          floorsWithTeams[teamFloor] = (floorsWithTeams[teamFloor] || 0) + 1;
-        });
-      });
-      return (floorsWithTeams[floor] || 0) <= CONSTRAINTS.maxTeamsPerFloor;
-    };
+    // Initialize current assignments as a Map for easy updates
+    let currentAssignedRoomsMap = new Map<string, string[]>();
+    activeTeams.forEach(team => currentAssignedRoomsMap.set(team.id, [])); // Initialize with empty assignments for each active team
 
-    // Phase 1: Initial assignment to active teams based on fixed zones, aiming for minCredits
-    tempUpdatedTeams = tempUpdatedTeams.map(team => {
-      const initialAssignedRooms: string[] = [];
-      let currentCredits = 0;
-      let currentFloors: number[] = [];
+    let currentAvailableRoomsState = [...availableRooms]; // Rooms currently available for assignment
 
-      const fixedZoneRooms = currentAvailableRooms.filter(room => team.fixedRooms.includes(room.number))
+    // Phase 1: Initial assignment to active teams based on fixed zones
+    const teamsSortedByFixedRooms = [...activeTeams].sort((a, b) => b.fixedRooms.length - a.fixedRooms.length); // Prioritize teams with more fixed rooms
+
+    teamsSortedByFixedRooms.forEach(team => {
+      let currentTeamAssignedRooms = currentAssignedRoomsMap.get(team.id) || [];
+      let { totalCredits: currentTeamCredits, floors: currentTeamFloors } = calculateStatsForAssignedRooms(currentTeamAssignedRooms);
+
+      const fixedZoneRooms = currentAvailableRoomsState.filter(room => team.fixedRooms.includes(room.number))
         .sort((a, b) => b.credits - a.credits);
-      
-      for (const room of fixedZoneRooms) {
-        const potentialCredits = currentCredits + room.credits;
-        const potentialFloors = [...new Set([...currentFloors, room.floor])];
-        
-        if (potentialCredits <= CONSTRAINTS.maxCredits && potentialFloors.length <= CONSTRAINTS.maxFloorsPerTeam && checkMaxTeamsPerFloor(tempUpdatedTeams, room.floor)) {
-          initialAssignedRooms.push(room.number);
-          currentCredits = potentialCredits;
-          currentFloors = potentialFloors;
-          currentAvailableRooms = currentAvailableRooms.filter(r => r.number !== room.number);
-        }
-        
-        if (currentCredits >= CONSTRAINTS.minCredits) break;
-      }
 
-      return { ...team, assignedRooms: initialAssignedRooms, floors: currentFloors, totalCredits: currentCredits };
+      for (const room of fixedZoneRooms) {
+        const potentialCredits = currentTeamCredits + room.credits;
+        const potentialTeamFloors = [...new Set([...currentTeamFloors, room.floor])];
+
+        // Create a temporary map for the global check including the potential new assignment
+        const tempPotentialAssignedRoomsMap = new Map(currentAssignedRoomsMap);
+        tempPotentialAssignedRoomsMap.set(team.id, [...currentTeamAssignedRooms, room.number]);
+
+        if (
+          potentialCredits <= CONSTRAINTS.maxCredits &&
+          potentialTeamFloors.length <= CONSTRAINTS.maxFloorsPerTeam &&
+          checkMaxTeamsPerFloorGlobal(room.floor, tempPotentialAssignedRoomsMap)
+        ) {
+          currentTeamAssignedRooms.push(room.number);
+          currentTeamCredits = potentialCredits;
+          currentTeamFloors = potentialTeamFloors; // Update for next iteration
+          currentAvailableRoomsState = currentAvailableRoomsState.filter(r => r.number !== room.number);
+        }
+        if (currentTeamCredits >= CONSTRAINTS.minCredits) break; // Reached min credits for this team, move to next
+      }
+      currentAssignedRoomsMap.set(team.id, currentTeamAssignedRooms);
     });
 
     // Phase 2: Distribute remaining unassigned rooms to fill teams to minCredits
-    let unassignedRooms = currentAvailableRooms.filter(room => !tempUpdatedTeams.some(team => team.assignedRooms.includes(room.number)));
-    unassignedRooms.sort(() => Math.random() - 0.5);
-
-    tempUpdatedTeams.forEach(team => {
-      let teamCredits = calculateCreditsForRoomNumbers(team.assignedRooms);
-      if (teamCredits < CONSTRAINTS.minCredits) {
-        const roomsToAssign: HousekeepingTypes.Room[] = [];
-        let potentialFloors = team.floors;
-        
-        for (const room of unassignedRooms) {
-          const potentialCredits = teamCredits + room.credits;
-          const potentialFloorsUpdated = [...new Set([...potentialFloors, room.floor])];
-          
-          if (potentialCredits <= CONSTRAINTS.minCredits && potentialCredits <= CONSTRAINTS.maxCredits && potentialFloorsUpdated.length <= CONSTRAINTS.maxFloorsPerTeam && checkMaxTeamsPerFloor(tempUpdatedTeams, room.floor)) {
-            roomsToAssign.push(room);
-            teamCredits = potentialCredits;
-            potentialFloors = potentialFloorsUpdated;
-            unassignedRooms = unassignedRooms.filter(r => r.number !== room.number);
-          }
+    // Filter available rooms that haven't been assigned in Phase 1
+    let unassignedRoomsPhase2 = currentAvailableRoomsState.filter(room => {
+      let isAssigned = false;
+      for (const assignedRooms of currentAssignedRoomsMap.values()) {
+        if (assignedRooms.includes(room.number)) {
+          isAssigned = true;
+          break;
         }
-        
-        team.assignedRooms.push(...roomsToAssign.map(r => r.number));
-        team.totalCredits = teamCredits;
-        team.floors = potentialFloors;
       }
+      return !isAssigned;
     });
 
-    // Phase 3: Distribute remaining rooms up to maxCredits if all teams meet minCredits
-    const allTeamsMeetMin = tempUpdatedTeams.every(team => team.totalCredits >= CONSTRAINTS.minCredits);
-    if (allTeamsMeetMin) {
-      tempUpdatedTeams.forEach(team => {
-        let teamCredits = team.totalCredits;
-        let potentialFloors = team.floors;
-        const roomsToAssign: HousekeepingTypes.Room[] = [];
-        
-        for (const room of unassignedRooms) {
-          const potentialCredits = teamCredits + room.credits;
-          const potentialFloorsUpdated = [...new Set([...potentialFloors, room.floor])];
-          
-          if (potentialCredits <= CONSTRAINTS.maxCredits && potentialFloorsUpdated.length <= CONSTRAINTS.maxFloorsPerTeam && checkMaxTeamsPerFloor(tempUpdatedTeams, room.floor)) {
-            roomsToAssign.push(room);
-            teamCredits = potentialCredits;
-            potentialFloors = potentialFloorsUpdated;
-            unassignedRooms = unassignedRooms.filter(r => r.number !== room.number);
+    unassignedRoomsPhase2.sort(() => Math.random() - 0.5); // Randomize to distribute evenly
+
+    activeTeams.forEach(team => {
+      let currentTeamAssignedRooms = currentAssignedRoomsMap.get(team.id) || [];
+      let { totalCredits: currentTeamCredits, floors: currentTeamFloors } = calculateStatsForAssignedRooms(currentTeamAssignedRooms);
+
+      if (currentTeamCredits < CONSTRAINTS.minCredits) {
+        // Iterate over a copy to allow modification of unassignedRoomsPhase2 during iteration
+        for (const room of [...unassignedRoomsPhase2]) {
+          const potentialCredits = currentTeamCredits + room.credits;
+          const potentialTeamFloors = [...new Set([...currentTeamFloors, room.floor])];
+
+          const tempPotentialAssignedRoomsMap = new Map(currentAssignedRoomsMap);
+          tempPotentialAssignedRoomsMap.set(team.id, [...currentTeamAssignedRooms, room.number]);
+
+          if (
+            potentialCredits <= CONSTRAINTS.minCredits && // Only assign up to minCredits in this phase
+            potentialCredits <= CONSTRAINTS.maxCredits &&
+            potentialTeamFloors.length <= CONSTRAINTS.maxFloorsPerTeam &&
+            checkMaxTeamsPerFloorGlobal(room.floor, tempPotentialAssignedRoomsMap)
+          ) {
+            currentTeamAssignedRooms.push(room.number);
+            currentTeamCredits = potentialCredits;
+            currentTeamFloors = potentialTeamFloors;
+            // Mark room as assigned in the current snapshot
+            currentAssignedRoomsMap.set(team.id, currentTeamAssignedRooms);
+            unassignedRoomsPhase2 = unassignedRoomsPhase2.filter(r => r.number !== room.number);
           }
         }
-        
-        team.assignedRooms.push(...roomsToAssign.map(r => r.number));
-        team.totalCredits = teamCredits;
-        team.floors = potentialFloors;
+      }
+    });
+    // Update currentAvailableRoomsState for phase 3, only keeping truly unassigned rooms
+    currentAvailableRoomsState = unassignedRoomsPhase2;
+
+
+    // Phase 3: Distribute remaining rooms up to maxCredits if all teams meet minCredits
+    const allTeamsMeetMin = Array.from(currentAssignedRoomsMap.keys()).every(teamId => {
+      const stats = calculateStatsForAssignedRooms(currentAssignedRoomsMap.get(teamId) || []);
+      return stats.totalCredits >= CONSTRAINTS.minCredits;
+    });
+
+    if (allTeamsMeetMin) {
+      activeTeams.forEach(team => {
+        let currentTeamAssignedRooms = currentAssignedRoomsMap.get(team.id) || [];
+        let { totalCredits: currentTeamCredits, floors: currentTeamFloors } = calculateStatsForAssignedRooms(currentTeamAssignedRooms);
+
+        // Iterate over a copy to allow modification of currentAvailableRoomsState during iteration
+        for (const room of [...currentAvailableRoomsState]) { // Iterate over remaining unassigned rooms
+          const potentialCredits = currentTeamCredits + room.credits;
+          const potentialTeamFloors = [...new Set([...currentTeamFloors, room.floor])];
+
+          const tempPotentialAssignedRoomsMap = new Map(currentAssignedRoomsMap);
+          tempPotentialAssignedRoomsMap.set(team.id, [...currentTeamAssignedRooms, room.number]);
+
+          if (
+            potentialCredits <= CONSTRAINTS.maxCredits &&
+            potentialTeamFloors.length <= CONSTRAINTS.maxFloorsPerTeam &&
+            checkMaxTeamsPerFloorGlobal(room.floor, tempPotentialAssignedRoomsMap)
+          ) {
+            currentTeamAssignedRooms.push(room.number);
+            currentTeamCredits = potentialCredits;
+            currentTeamFloors = potentialTeamFloors;
+            // Mark room as assigned in the current snapshot
+            currentAssignedRoomsMap.set(team.id, currentTeamAssignedRooms);
+            currentAvailableRoomsState = currentAvailableRoomsState.filter(r => r.number !== room.number);
+          }
+        }
       });
     }
 
-    onTeamsUpdate(tempUpdatedTeams);
-    onRoomsUpdate(unassignedRooms);
+    // Convert map back to array of teams for onTeamsUpdate
+    const finalUpdatedTeams: HousekeepingTypes.Team[] = activeTeams.map(team => {
+      const assignedRooms = currentAssignedRoomsMap.get(team.id) || [];
+      const stats = calculateStatsForAssignedRooms(assignedRooms);
+      return {
+        ...team,
+        assignedRooms: assignedRooms,
+        totalCredits: stats.totalCredits,
+        floors: stats.floors,
+      };
+    });
+
+    setActiveTeams(finalUpdatedTeams);
+    setAvailableRooms(currentAvailableRoomsState);
     setAutoAssignInProgress(false);
   };
 
   // Reset assignments
   const resetAssignments = () => {
-    const resetTeams = teams.map(team => ({
+    const resetTeams = activeTeams.map(team => ({
       ...team,
       assignedRooms: [],
       totalCredits: 0,
       floors: [],
     }));
-    
-    onTeamsUpdate(resetTeams);
-    onRoomsUpdate([...ALL_ROOMS]); // Restore all rooms to available
+
+    setActiveTeams(resetTeams);
+    setAvailableRooms([...ALL_ROOMS]); // Restore all rooms to available
   };
 
-  // Toggle room assignment for a team
-  const toggleRoomAssignment = (teamId: string, roomNumber: string) => {
-    const updatedTeams = teams.map(team => {
-      if (team.id === teamId) {
-        const isAssigned = team.assignedRooms.includes(roomNumber);
-        let newAssignedRooms: string[];
-        let newAvailableRooms = [...availableRooms];
-
-        if (isAssigned) {
-          newAssignedRooms = team.assignedRooms.filter(r => r !== roomNumber);
-          const roomBeingUnassigned = ALL_ROOMS.find(r => r.number === roomNumber);
-          if (roomBeingUnassigned) {
-            newAvailableRooms.push(roomBeingUnassigned);
-            newAvailableRooms.sort((a,b) => a.number.localeCompare(b.number));
-          }
-        } else {
-          newAssignedRooms = [...team.assignedRooms, roomNumber];
-          newAvailableRooms = newAvailableRooms.filter(r => r.number !== roomNumber);
-        }
-        
-        const roomData = ALL_ROOMS.filter(room => 
-          newAssignedRooms.includes(room.number)
-        );
-        const totalCredits = roomData.reduce((sum, room) => sum + room.credits, 0);
-        const floors = [...new Set(roomData.map(room => room.floor))].sort();
-        
-        onRoomsUpdate(newAvailableRooms);
-
-        return {
-          ...team,
-          assignedRooms: newAssignedRooms,
-          totalCredits,
-          floors,
-        };
-      }
-      return team;
-    });
-    
-    onTeamsUpdate(updatedTeams);
-  };
+  // No longer needed in TeamAssignments as per requirements
+  // const toggleRoomAssignment = (teamId: string, roomNumber: string) => { /* ... */ };
 
   return (
     <Card>
@@ -218,7 +228,7 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
             </CardDescription>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button 
+            <Button
               onClick={autoAssignRooms}
               disabled={autoAssignInProgress}
               className="w-full sm:w-auto px-6 py-3 text-lg bg-green-500 text-white hover:bg-green-600 flex items-center justify-center"
@@ -226,7 +236,7 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
             >
               {autoAssignInProgress ? 'Assigning...' : '🎯 Auto Assign'}
             </Button>
-            <Button 
+            <Button
               variant="destructive"
               onClick={resetAssignments}
               className="w-full sm:w-auto"
@@ -239,154 +249,76 @@ const TeamAssignments: React.FC<TeamAssignmentsProps> = ({
 
       <CardContent>
         <div className="grid grid-cols-1 gap-4">
-          {teams.map(team => {
+          {activeTeams.map(team => {
             const stats = calculateTeamStats(team);
             const progressPercentage = Math.min((stats.totalCredits / CONSTRAINTS.maxCredits) * 100, 100);
-            
+
             return (
-              <Card 
-                key={team.id} 
+              <Card
+                key={team.id}
                 className={cn(
-                  "cursor-pointer transition-all hover:shadow-md",
-                  selectedTeam === team.id && "ring-2 ring-primary",
-                  "border-l-4", // Add left border
+                  "border-l-4",
+                  team.color ? `border-[${team.color}]` : "border-gray-300",
+                  selectedTeam === team.id ? "ring-2 ring-offset-2 ring-blue-500" : ""
                 )}
-                style={{ borderLeftColor: team.color }}
-                onClick={() => setSelectedTeam(selectedTeam === team.id ? null : team.id)}
+                onClick={() => setSelectedTeam(team.id === selectedTeam ? null : team.id)}
               >
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-4 h-4 rounded-full flex-shrink-0" 
-                      style={{ backgroundColor: team.color }}
-                    />
-                    <CardTitle 
-                      className={cn(
-                        "text-lg",
-                        selectedTeam === team.id ? "text-primary" : "text-foreground"
-                      )}
-                    >
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-4 h-4 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: team.color }}
+                      />
                       {team.name}
-                    </CardTitle>
-                  </div>
+                    </div>
+                    <Badge variant="secondary" className="text-sm">
+                      {stats.roomCount} Rooms
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={stats.totalCredits >= CONSTRAINTS.minCredits && stats.totalCredits <= CONSTRAINTS.maxCredits ? "default" : "destructive"}
+                        className="text-xs"
+                      >
+                        Credits: {stats.totalCredits.toFixed(1)} / {CONSTRAINTS.maxCredits}
+                      </Badge>
+                      <Badge
+                        variant={stats.floors.length <= CONSTRAINTS.maxFloorsPerTeam ? "default" : "destructive"}
+                        className="text-xs"
+                      >
+                        Floors: {stats.floors.length} / {CONSTRAINTS.maxFloorsPerTeam}
+                      </Badge>
+                    </div>
+                  </CardDescription>
                 </CardHeader>
-                
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium">Credits:</span>
-                        <Badge 
-                          variant={stats.isWithinRange ? "default" : "destructive"}
-                          className="text-xs"
-                        >
-                          {stats.totalCredits.toFixed(1)} / {CONSTRAINTS.minCredits}-{CONSTRAINTS.maxCredits}
-                        </Badge>
-                      </div>
-                      <Progress value={progressPercentage} className="h-2" />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium">Floors:</span>
-                        <Badge 
-                          variant={stats.hasValidFloors ? "default" : "destructive"}
-                          className="text-xs"
-                        >
-                          {stats.floors.length > 0 ? stats.floors.join(', ') : 'None'} 
-                          {stats.floors.length > 0 && ` (${stats.floors.length}/${CONSTRAINTS.maxFloorsPerTeam})`}
-                        </Badge>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium">Rooms:</span>
-                        <Badge variant="outline" className="text-xs">
-                          {stats.roomCount}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                  
+                <CardContent>
+                  <Progress
+                    value={progressPercentage}
+                    className="mb-4"
+                  />
                   {selectedTeam === team.id && (
-                    <div className="border-t pt-4 space-y-4">
-                      <div>
-                        <h4 className="font-medium mb-2">Assigned Rooms:</h4>
-                        <div className="space-y-2 max-h-32 overflow-y-auto">
-                          {team.assignedRooms.length > 0 ? (
-                            team.assignedRooms.map(roomNumber => {
-                              const roomData = ALL_ROOMS.find(r => r.number === roomNumber);
-                              return (
-                                <div 
-                                  key={roomNumber}
-                                  className="flex items-center justify-between p-2 bg-muted rounded-md"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium">{roomNumber}</span>
-                                    <Badge variant="outline" className="text-xs">
-                                      {roomData?.credits || 0} credits
-                                    </Badge>
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleRoomAssignment(team.id, roomNumber);
-                                    }}
-                                    className="h-6 w-6 p-0 text-destructive hover:text-destructive/80"
-                                  >
-                                    ×
-                                  </Button>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <p className="text-sm text-muted-foreground italic text-center py-4">
-                              No rooms assigned
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <h4 className="font-medium mb-2">Available Fixed Zone Rooms:</h4>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-32 overflow-y-auto">
-                          {team.fixedRooms.map(roomNumber => {
-                            const isAvailable = availableRooms.some(room => room.number === roomNumber);
-                            const isAssigned = team.assignedRooms.includes(roomNumber);
-                            const roomData = ALL_ROOMS.find(r => r.number === roomNumber);
-                            
-                            return (
-                              <Button
-                                key={roomNumber}
-                                variant={isAssigned ? "default" : "outline"}
-                                size="sm"
-                                disabled={!isAvailable || isAssigned} // Disable if not globally available OR if already assigned to this team
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (isAvailable) {
-                                    toggleRoomAssignment(team.id, roomNumber);
-                                  }
-                                }}
-                                className={cn(
-                                  "h-10 text-xs flex flex-col p-1",
-                                  !isAvailable && "opacity-50 cursor-not-allowed"
-                                )}
-                              >
-                                <span className="font-medium">{roomNumber}</span>
-                                <span className="text-[10px] opacity-80">
-                                  {roomData ? `${roomData.credits}c` : 'N/A'}
-                                </span>
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4">
+                      {team.assignedRooms.length > 0 ? (
+                        team.assignedRooms.sort((a, b) => parseInt(a) - parseInt(b)).map(roomNumber => (
+                          <Badge key={roomNumber} variant="outline" className="flex justify-center items-center h-8">
+                            {roomNumber}
+                          </Badge>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground text-sm col-span-full">No rooms assigned.</p>
+                      )}
                     </div>
                   )}
                 </CardContent>
               </Card>
             );
           })}
+
+          {activeTeams.length === 0 && (
+            <p className="text-center text-muted-foreground col-span-full">No active teams selected. Please go to Team Management to select teams.</p>
+          )}
         </div>
       </CardContent>
     </Card>

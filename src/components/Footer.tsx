@@ -11,7 +11,7 @@ const Footer: React.FC = () => {
         </div>
         <div className="flex items-center space-x-4">
           <p className="text-sm text-muted-foreground">
-            © 2024 Housekeeping Manager
+            © 2025 Prince De Galles, Paris. All rights reserved.
           </p>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import * as HousekeepingTypes from '../types/housekeeping';
 import { ALL_ROOMS } from '../utils/housekeepingData';
+import { useHousekeeping } from '../context/HousekeepingContext'; // Import context
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,12 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
-interface RoomManagerProps {
-  rooms: HousekeepingTypes.Room[];
-  onRoomsUpdate: (rooms: HousekeepingTypes.Room[]) => void;
-}
+const RoomManager: React.FC = () => {
+  const { availableRooms, setAvailableRooms } = useHousekeeping();
 
-const RoomManager: React.FC<RoomManagerProps> = ({ rooms, onRoomsUpdate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [floorFilter, setFloorFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -21,30 +19,30 @@ const RoomManager: React.FC<RoomManagerProps> = ({ rooms, onRoomsUpdate }) => {
 
   // Toggle room availability
   const toggleRoomAvailability = (roomNumber: string) => {
-    const roomInList = rooms.find(room => room.number === roomNumber);
+    const roomInList = availableRooms.find(room => room.number === roomNumber);
     
     if (roomInList) {
       // Room is currently available, make it unavailable
-      const updatedRooms = rooms.filter(room => room.number !== roomNumber);
-      onRoomsUpdate(updatedRooms);
+      const updatedRooms = availableRooms.filter(room => room.number !== roomNumber);
+      setAvailableRooms(updatedRooms);
     } else {
       // Room is currently unavailable, make it available
       const originalRoom = ALL_ROOMS.find(room => room.number === roomNumber);
       if (originalRoom) {
-        const updatedRooms = [...rooms, originalRoom].sort((a, b) => 
+        const updatedRooms = [...availableRooms, originalRoom].sort((a, b) => 
           a.number.localeCompare(b.number)
         );
-        onRoomsUpdate(updatedRooms);
+        setAvailableRooms(updatedRooms);
       }
     }
   };
 
   const resetAllRooms = () => {
-    onRoomsUpdate([...ALL_ROOMS]);
+    setAvailableRooms([...ALL_ROOMS]);
   };
 
   const removeAllRooms = () => {
-    onRoomsUpdate([]);
+    setAvailableRooms([]);
   };
 
   // Get all unique floors for filter options
@@ -71,11 +69,11 @@ const RoomManager: React.FC<RoomManagerProps> = ({ rooms, onRoomsUpdate }) => {
     // Apply status filter
     if (statusFilter === 'available') {
       filteredRooms = filteredRooms.filter(room => 
-        rooms.some(availableRoom => availableRoom.number === room.number)
+        availableRooms.some(availableRoom => availableRoom.number === room.number)
       );
     } else if (statusFilter === 'unavailable') {
       filteredRooms = filteredRooms.filter(room => 
-        !rooms.some(availableRoom => availableRoom.number === room.number)
+        !availableRooms.some(availableRoom => availableRoom.number === room.number)
       );
     }
     // No additional filtering for 'all' status; it should display all rooms handled by initial `filteredRooms` assignment.
@@ -91,15 +89,15 @@ const RoomManager: React.FC<RoomManagerProps> = ({ rooms, onRoomsUpdate }) => {
       default:
         return filteredRooms;
     }
-  }, [searchTerm, floorFilter, statusFilter, sortBy, rooms]);
+  }, [searchTerm, floorFilter, statusFilter, sortBy, availableRooms]);
 
   // Statistics
   const stats = {
     totalRooms: ALL_ROOMS.length,
-    availableRooms: rooms.length,
-    unavailableRooms: ALL_ROOMS.length - rooms.length,
+    availableRooms: availableRooms.length,
+    unavailableRooms: ALL_ROOMS.length - availableRooms.length,
     totalCredits: ALL_ROOMS.reduce((sum, room) => sum + room.credits, 0),
-    availableCredits: rooms.reduce((sum, room) => sum + room.credits, 0),
+    availableCredits: availableRooms.reduce((sum, room) => sum + room.credits, 0),
   };
 
   return (
@@ -231,7 +229,7 @@ const RoomManager: React.FC<RoomManagerProps> = ({ rooms, onRoomsUpdate }) => {
             <CardContent>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
                 {filteredAndSortedRooms.map(room => {
-                  const isAvailable = rooms.some(availableRoom => 
+                  const isAvailable = availableRooms.some(availableRoom => 
                     availableRoom.number === room.number
                   );
 
